@@ -48,8 +48,8 @@ bsmamba2/
 ### Install from source
 
 ```bash
-git clone https://github.com/yourusername/bsmamba2.git
-cd bsmamba2
+git clone https://github.com/chynggi/Mamba2MeetsSilence.git
+cd Mamba2MeetsSilence
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -255,7 +255,7 @@ This project is licensed under the CC BY 4.0.
 
 For questions or issues, please:
 - Open an issue on GitHub
-- Contact: your.email@example.com
+- Contact: chynggi69@gmail.com
 
 ## 🗺️ Roadmap
 
