@@ -145,7 +145,8 @@ Desktop.ini
 
 # Datasets
 musdb18hq/
-data/
+# Note: data/ is our source code package, not ignored
+# If you have dataset files, put them in a different directory like datasets/
 
 # Model checkpoints
 outputs/

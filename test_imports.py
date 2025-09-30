@@ -2,11 +2,19 @@
 """Test script to verify import paths are working correctly."""
 
 import sys
+import os
 from pathlib import Path
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root))
+
+# Also add as absolute path to avoid any relative path issues
+if str(project_root.absolute()) not in sys.path:
+    sys.path.insert(0, str(project_root.absolute()))
+
+# Set PYTHONPATH environment variable as well
+os.environ['PYTHONPATH'] = str(project_root) + os.pathsep + os.environ.get('PYTHONPATH', '')
 
 print("=" * 60)
 print("Testing BSMamba2 Import Paths")
