@@ -8,7 +8,7 @@ from typing import List, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .mamba2 import Mamba2Block, RMSNorm
+from models.mamba2 import Mamba2Block, RMSNorm
 
 
 class BandSplitModule(nn.Module):

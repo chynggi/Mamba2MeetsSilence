@@ -4,9 +4,15 @@ This script evaluates a trained BSMamba2 model on the MUSDB18HQ test set
 and computes cSDR and uSDR metrics.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import argparse
 import logging
-from pathlib import Path
 import torch
 import musdb
 import numpy as np

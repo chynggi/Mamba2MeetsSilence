@@ -1,8 +1,8 @@
 """BSMamba2 models package."""
 
-from .bsmamba2 import BSMamba2
-from .mamba2 import Mamba2Block
-from .components import BandSplitModule, DualPathModule, MaskEstimationModule
+from models.bsmamba2 import BSMamba2
+from models.mamba2 import Mamba2Block
+from models.components import BandSplitModule, DualPathModule, MaskEstimationModule
 
 __all__ = [
     'BSMamba2',

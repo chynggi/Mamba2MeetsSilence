@@ -3,6 +3,13 @@
 This script demonstrates basic usage of BSMamba2 for vocal separation.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import torch
 import soundfile as sf
 from models.bsmamba2 import BSMamba2

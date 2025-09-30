@@ -7,7 +7,7 @@ separation, combining Band-Split, Dual-Path, and Mask Estimation modules.
 from typing import Tuple, Optional
 import torch
 import torch.nn as nn
-from .components import BandSplitModule, DualPathModule, MaskEstimationModule
+from models.components import BandSplitModule, DualPathModule, MaskEstimationModule
 
 
 class BSMamba2(nn.Module):

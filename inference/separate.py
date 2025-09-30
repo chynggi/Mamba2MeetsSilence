@@ -12,8 +12,8 @@ import soundfile as sf
 import numpy as np
 from tqdm import tqdm
 
-from ..models.bsmamba2 import BSMamba2
-from ..utils.config import load_config
+from models.bsmamba2 import BSMamba2
+from utils.config import load_config
 
 
 logger = logging.getLogger(__name__)
