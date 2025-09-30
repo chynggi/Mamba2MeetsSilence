@@ -93,6 +93,7 @@ class Trainer:
         self.model.train()
         total_loss = 0.0
         num_batches = 0
+        accumulation_steps = self.config['training'].get('gradient_accumulation_steps', 1)
         
         pbar = tqdm(train_loader, desc=f'Epoch {self.current_epoch}')
         
@@ -110,33 +111,38 @@ class Trainer:
                 # Convert back to time domain
                 pred_audio = self._spec_to_audio(pred_spec, mixture.shape[-1])
                 
-                # Compute loss
-                loss = self.criterion(pred_audio, target)
+                # Compute loss (normalized by accumulation steps)
+                loss = self.criterion(pred_audio, target) / accumulation_steps
             
             # Backward pass
-            self.optimizer.zero_grad()
-            
             if self.scaler is not None:
                 self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
             else:
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
+            
+            # Update weights every accumulation_steps
+            if (batch_idx + 1) % accumulation_steps == 0:
+                if self.scaler is not None:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    self.optimizer.step()
+                
+                self.optimizer.zero_grad()
             
             # Update metrics
-            total_loss += loss.item()
+            total_loss += loss.item() * accumulation_steps  # Denormalize for logging
             num_batches += 1
             
             # Update progress bar
-            pbar.set_postfix({'loss': loss.item()})
+            pbar.set_postfix({'loss': loss.item() * accumulation_steps})
             
             # Log to tensorboard
             if self.global_step % 100 == 0:
-                self.writer.add_scalar('train/loss', loss.item(), self.global_step)
+                self.writer.add_scalar('train/loss', loss.item() * accumulation_steps, self.global_step)
                 self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], self.global_step)
             
             self.global_step += 1
@@ -352,6 +358,7 @@ def train_model(config: Dict, device: Optional[torch.device] = None):
         d_state=config['model'].get('d_state', 64),
         d_conv=config['model'].get('d_conv', 4),
         dropout=config['training'].get('dropout', 0.0),
+        use_gradient_checkpointing=config['model'].get('use_gradient_checkpointing', False),
     )
     
     # Create datasets
@@ -380,16 +387,18 @@ def train_model(config: Dict, device: Optional[torch.device] = None):
         train_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=True,
-        num_workers=4,
+        num_workers=2,  # Reduced to save memory
         pin_memory=True,
+        prefetch_factor=2,  # Reduce prefetching to save memory
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=False,
-        num_workers=4,
+        num_workers=2,  # Reduced to save memory
         pin_memory=True,
+        prefetch_factor=2,  # Reduce prefetching to save memory
     )
     
     # Create trainer

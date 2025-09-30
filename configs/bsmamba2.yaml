@@ -2,23 +2,24 @@
 
 # Model Architecture
 model:
-  hidden_dim: 256          # Hidden dimension for features
-  num_layers: 6            # Number of dual-path layers (L)
-  num_subbands: 62         # Number of frequency sub-bands (K)
+  hidden_dim: 192          # Hidden dimension for features (reduced for VRAM)
+  num_layers: 4            # Number of dual-path layers (L) (reduced for VRAM)
+  num_subbands: 48         # Number of frequency sub-bands (K) (reduced for VRAM)
   d_state: 64              # State dimension for Mamba2
   d_conv: 4                # Convolution size for Mamba2
+  use_gradient_checkpointing: true  # Enable gradient checkpointing to save VRAM
 
 # Audio Processing
 audio:
   sample_rate: 44100       # Target sample rate
   n_fft: 2048              # FFT window size
   hop_length: 441          # Hop length for STFT (sample_rate / 100)
-  segment_length: 8        # Segment length in seconds
+  segment_length: 4        # Segment length in seconds (reduced for VRAM)
 
 # Training Configuration
 training:
-  batch_size: 5                      # Batch size per GPU
-  gradient_accumulation_steps: 6     # Gradient accumulation steps
+  batch_size: 2                      # Batch size per GPU (reduced for VRAM)
+  gradient_accumulation_steps: 15    # Gradient accumulation steps (increased to maintain effective batch)
   learning_rate: 5e-4                # Initial learning rate
   num_epochs: 100                    # Total number of epochs
   precision: "bf16"                  # Training precision (bf16/fp32)
@@ -34,4 +35,4 @@ loss:
 
 # Data Configuration
 data:
-  root: "/path/to/musdb18hq"  # Path to MUSDB18HQ dataset
+  root: "/workspace/musdb18hq"  # Path to MUSDB18HQ dataset

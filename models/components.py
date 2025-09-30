@@ -120,9 +120,11 @@ class DualPathModule(nn.Module):
         d_state: int = 64,
         d_conv: int = 4,
         dropout: float = 0.0,
+        use_gradient_checkpointing: bool = False,
     ):
         super().__init__()
         self.num_layers = num_layers
+        self.use_gradient_checkpointing = use_gradient_checkpointing
         
         # Time-axis Mamba2 blocks
         self.time_blocks = nn.ModuleList([
@@ -142,6 +144,18 @@ class DualPathModule(nn.Module):
             for _ in range(num_layers)
         ])
         
+    def _process_time_axis(self, x, time_block):
+        """Process time axis with Mamba2 block."""
+        x_norm = time_block['norm'](x)
+        x_out, _ = time_block['mamba'](x_norm)
+        return x + x_out
+    
+    def _process_band_axis(self, x, band_block):
+        """Process band axis with Mamba2 block."""
+        x_norm = band_block['norm'](x)
+        x_out, _ = band_block['mamba'](x_norm)
+        return x + x_out
+    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply dual-path processing.
         
@@ -158,10 +172,16 @@ class DualPathModule(nn.Module):
             # Reshape to process each band independently
             x_time = x.view(batch * num_bands, time, hidden_dim)
             
-            # Apply Mamba2 block with residual connection
-            x_time_norm = self.time_blocks[layer_idx]['norm'](x_time)
-            x_time_out, _ = self.time_blocks[layer_idx]['mamba'](x_time_norm)
-            x_time = x_time + x_time_out
+            # Apply Mamba2 block with residual connection (with optional gradient checkpointing)
+            if self.use_gradient_checkpointing and self.training:
+                x_time = torch.utils.checkpoint.checkpoint(
+                    self._process_time_axis,
+                    x_time,
+                    self.time_blocks[layer_idx],
+                    use_reentrant=False
+                )
+            else:
+                x_time = self._process_time_axis(x_time, self.time_blocks[layer_idx])
             
             # Reshape back
             x = x_time.view(batch, num_bands, time, hidden_dim)
@@ -171,10 +191,16 @@ class DualPathModule(nn.Module):
             # Reshape to process each time step independently
             x_band = x.view(batch * time, num_bands, hidden_dim)
             
-            # Apply Mamba2 block with residual connection
-            x_band_norm = self.band_blocks[layer_idx]['norm'](x_band)
-            x_band_out, _ = self.band_blocks[layer_idx]['mamba'](x_band_norm)
-            x_band = x_band + x_band_out
+            # Apply Mamba2 block with residual connection (with optional gradient checkpointing)
+            if self.use_gradient_checkpointing and self.training:
+                x_band = torch.utils.checkpoint.checkpoint(
+                    self._process_band_axis,
+                    x_band,
+                    self.band_blocks[layer_idx],
+                    use_reentrant=False
+                )
+            else:
+                x_band = self._process_band_axis(x_band, self.band_blocks[layer_idx])
             
             # Reshape back
             x = x_band.view(batch, time, num_bands, hidden_dim)

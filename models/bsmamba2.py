@@ -39,12 +39,14 @@ class BSMamba2(nn.Module):
         d_state: int = 64,
         d_conv: int = 4,
         dropout: float = 0.0,
+        use_gradient_checkpointing: bool = False,
     ):
         super().__init__()
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.num_subbands = num_subbands
         self.hidden_dim = hidden_dim
+        self.use_gradient_checkpointing = use_gradient_checkpointing
         
         # Band-Split Module
         self.band_split = BandSplitModule(
@@ -60,6 +62,7 @@ class BSMamba2(nn.Module):
             d_state=d_state,
             d_conv=d_conv,
             dropout=dropout,
+            use_gradient_checkpointing=use_gradient_checkpointing,
         )
         
         # Mask Estimation Module
