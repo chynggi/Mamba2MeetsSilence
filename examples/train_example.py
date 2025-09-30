@@ -19,7 +19,7 @@ def main():
     config['training']['output_dir'] = 'outputs/example_run'
     
     # Update dataset path (IMPORTANT: Change this to your dataset location)
-    config['data']['root'] = '/path/to/your/musdb18hq'
+    config['data']['root'] = '/workspace/musdb18hq'
     
     # Print configuration
     print('Training Configuration:')
