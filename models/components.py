@@ -170,7 +170,7 @@ class DualPathModule(nn.Module):
         for layer_idx in range(self.num_layers):
             # Time-axis processing
             # Reshape to process each band independently
-            x_time = x.view(batch * num_bands, time, hidden_dim)
+            x_time = x.reshape(batch * num_bands, time, hidden_dim)
             
             # Apply Mamba2 block with residual connection (with optional gradient checkpointing)
             if self.use_gradient_checkpointing and self.training:
@@ -184,12 +184,12 @@ class DualPathModule(nn.Module):
                 x_time = self._process_time_axis(x_time, self.time_blocks[layer_idx])
             
             # Reshape back
-            x = x_time.view(batch, num_bands, time, hidden_dim)
-            x = x.transpose(1, 2)  # (batch, time, num_bands, hidden_dim)
+            x = x_time.reshape(batch, num_bands, time, hidden_dim)
+            x = x.transpose(1, 2).contiguous()  # (batch, time, num_bands, hidden_dim)
             
             # Band-axis processing
             # Reshape to process each time step independently
-            x_band = x.view(batch * time, num_bands, hidden_dim)
+            x_band = x.reshape(batch * time, num_bands, hidden_dim)
             
             # Apply Mamba2 block with residual connection (with optional gradient checkpointing)
             if self.use_gradient_checkpointing and self.training:
@@ -203,7 +203,7 @@ class DualPathModule(nn.Module):
                 x_band = self._process_band_axis(x_band, self.band_blocks[layer_idx])
             
             # Reshape back
-            x = x_band.view(batch, time, num_bands, hidden_dim)
+            x = x_band.reshape(batch, time, num_bands, hidden_dim)
         
         return x
 

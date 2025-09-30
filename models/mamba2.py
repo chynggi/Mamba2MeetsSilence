@@ -52,7 +52,7 @@ class Mamba2Block(nn.Module):
         )
         
         # State space parameters
-        self.x_proj = nn.Linear(self.d_inner, d_state + d_state + self.d_inner, bias=False)
+        self.x_proj = nn.Linear(self.d_inner, d_state + d_state + d_state, bias=False)
         
         # Scalar state transition parameter (A = aI)
         self.A_log = nn.Parameter(torch.randn(self.d_inner))
@@ -93,7 +93,13 @@ class Mamba2Block(nn.Module):
         # Combine bidirectional outputs
         out = (out_fwd + out_bwd) * 0.5
         
-        return out, (state_fwd + state_bwd) * 0.5
+        # Combine states if they exist
+        if state_fwd is not None and state_bwd is not None:
+            final_state = (state_fwd + state_bwd) * 0.5
+        else:
+            final_state = None
+        
+        return out, final_state
     
     def _forward_direction(
         self,
@@ -124,10 +130,10 @@ class Mamba2Block(nn.Module):
         x = F.silu(x)
         
         # State space computation
-        x_proj = self.x_proj(x)  # (batch, seqlen, d_state + d_state + d_inner)
+        x_proj = self.x_proj(x)  # (batch, seqlen, d_state + d_state + d_state)
         delta, B, C = torch.split(
             x_proj,
-            [self.d_state, self.d_state, self.d_inner],
+            [self.d_state, self.d_state, self.d_state],
             dim=-1
         )
         
@@ -169,7 +175,7 @@ class Mamba2Block(nn.Module):
             delta: Time steps of shape (batch, seqlen, d_state)
             A: State transition of shape (d_inner,)
             B: Input matrix of shape (batch, seqlen, d_state)
-            C: Output matrix of shape (batch, seqlen, d_inner)
+            C: Output matrix of shape (batch, seqlen, d_state)
             D: Direct feedthrough of shape (d_inner,)
             state: Optional initial state
             
@@ -185,14 +191,20 @@ class Mamba2Block(nn.Module):
         
         # Discretize A and B
         deltaA = torch.exp(delta.unsqueeze(2) * A.view(1, 1, -1, 1))  # (batch, seqlen, d_inner, 1)
-        deltaB = delta.unsqueeze(2) * B.unsqueeze(2)  # (batch, seqlen, d_inner, d_state)
+        deltaB_u = delta.unsqueeze(2) * B.unsqueeze(2) * u.unsqueeze(-1)  # (batch, seqlen, d_inner, d_state)
         
         # Sequential scan
         ys = []
         x = state
         for i in range(seqlen):
-            x = deltaA[:, i] * x + deltaB[:, i] * u[:, i].unsqueeze(-1)
-            y = torch.sum(C[:, i].unsqueeze(1) * x, dim=-1) + D * u[:, i]
+            # Update state: x(t+1) = A * x(t) + B * u(t)
+            x = deltaA[:, i] * x + deltaB_u[:, i]  # (batch, d_inner, d_state)
+            
+            # Compute output: y(t) = C * x(t) + D * u(t)
+            # C[:, i]: (batch, d_state) -> (batch, 1, d_state)
+            # x: (batch, d_inner, d_state)
+            # We need: (batch, d_inner)
+            y = torch.einsum('bd,bnd->bn', C[:, i], x) + D * u[:, i]  # (batch, d_inner)
             ys.append(y)
         
         y = torch.stack(ys, dim=1)  # (batch, seqlen, d_inner)

@@ -197,7 +197,7 @@ class Trainer:
         return metrics
     
     def _audio_to_spec(self, audio: torch.Tensor) -> torch.Tensor:
-        """Convert audio to complex spectrogram.
+        """Convert audio to complex spectrogram (optimized).
         
         Args:
             audio: Audio of shape (batch, channels, samples)
@@ -207,18 +207,14 @@ class Trainer:
         """
         batch, channels, samples = audio.shape
         
-        # Process each channel
-        specs = []
-        for ch in range(channels):
-            spec = stft(
-                audio[:, ch, :],
-                n_fft=self.config['audio']['n_fft'],
-                hop_length=self.config['audio']['hop_length'],
-            )
-            specs.append(spec)
+        # Average channels first, then compute STFT once (much faster)
+        audio_mono = audio.mean(dim=1)  # (batch, samples)
         
-        # Average channels (or process separately)
-        spec = torch.stack(specs, dim=0).mean(dim=0)
+        spec = stft(
+            audio_mono,
+            n_fft=self.config['audio']['n_fft'],
+            hop_length=self.config['audio']['hop_length'],
+        )
         
         return spec
     
@@ -387,18 +383,21 @@ def train_model(config: Dict, device: Optional[torch.device] = None):
         train_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=True,
-        num_workers=2,  # Reduced to save memory
+        num_workers=4,  # Increased for better throughput
         pin_memory=True,
-        prefetch_factor=2,  # Reduce prefetching to save memory
+        prefetch_factor=2,
+        persistent_workers=True,  # Keep workers alive between epochs
+        drop_last=True,  # Drop incomplete batches for consistent training
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=False,
-        num_workers=2,  # Reduced to save memory
+        num_workers=2,
         pin_memory=True,
-        prefetch_factor=2,  # Reduce prefetching to save memory
+        prefetch_factor=2,
+        persistent_workers=True,
     )
     
     # Create trainer

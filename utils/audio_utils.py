@@ -8,8 +8,12 @@ import torch
 import torch.nn.functional as F
 
 
+# Global window cache to avoid recreating windows
+_window_cache = {}
+
+
 def get_window(window_type: str, window_length: int, device: torch.device) -> torch.Tensor:
-    """Get window function.
+    """Get window function with caching.
     
     Args:
         window_type: Window type ('hann', 'hamming', 'blackman')
@@ -19,14 +23,17 @@ def get_window(window_type: str, window_length: int, device: torch.device) -> to
     Returns:
         Window tensor
     """
-    if window_type == 'hann':
-        return torch.hann_window(window_length, device=device)
-    elif window_type == 'hamming':
-        return torch.hamming_window(window_length, device=device)
-    elif window_type == 'blackman':
-        return torch.blackman_window(window_length, device=device)
-    else:
-        raise ValueError(f'Unknown window type: {window_type}')
+    key = (window_type, window_length, device)
+    if key not in _window_cache:
+        if window_type == 'hann':
+            _window_cache[key] = torch.hann_window(window_length, device=device)
+        elif window_type == 'hamming':
+            _window_cache[key] = torch.hamming_window(window_length, device=device)
+        elif window_type == 'blackman':
+            _window_cache[key] = torch.blackman_window(window_length, device=device)
+        else:
+            raise ValueError(f'Unknown window type: {window_type}')
+    return _window_cache[key]
 
 
 def stft(

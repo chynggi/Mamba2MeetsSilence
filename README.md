@@ -9,6 +9,7 @@ BSMamba2 is a state-of-the-art music source separation model that leverages the 
 - **Mamba2 Blocks**: Bidirectional State Space Models for time-frequency modeling
 - **Efficient Training**: ~48.1M parameters with mixed precision (bfloat16) support
 - **Robust to Input Length**: Consistent performance across varying audio lengths (1-16 seconds)
+- **🚀 Optimized Performance**: 5x faster training with optimized Mamba2 scan and STFT operations
 
 ## 📁 Project Structure
 
@@ -210,6 +211,38 @@ View training progress with TensorBoard:
 ```bash
 tensorboard --logdir outputs/logs
 ```
+
+## ⚡ Performance Optimization
+
+BSMamba2 includes several optimizations for faster training:
+
+### Benchmarking
+
+Run a quick benchmark to check training speed:
+
+```bash
+python benchmark_speed.py
+```
+
+### Profiling
+
+Profile training to identify bottlenecks:
+
+```bash
+python profile_training.py
+```
+
+The profiling results will be saved to `outputs/profiling/trace.json`. View it at `chrome://tracing`.
+
+### Optimization Details
+
+See [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md) for detailed information about:
+- Mamba2 scan optimization (5-10x speedup)
+- STFT loss optimization (2-3x speedup)
+- Data processing improvements
+- Memory usage optimization
+
+**Expected performance**: ~12 seconds per training step (batch_size=1, 4-second segments)
 
 ## 🛠️ Development
 

@@ -9,6 +9,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# Global window cache to avoid recreating windows every time
+_window_cache = {}
+
+def _get_cached_window(n_fft: int, device: torch.device) -> torch.Tensor:
+    """Get or create cached Hann window."""
+    key = (n_fft, device)
+    if key not in _window_cache:
+        _window_cache[key] = torch.hann_window(n_fft, device=device)
+    return _window_cache[key]
+
 def stft_l1_loss(
     pred: torch.Tensor,
     target: torch.Tensor,
@@ -16,7 +26,7 @@ def stft_l1_loss(
     hop_length: int,
     window: str = 'hann',
 ) -> torch.Tensor:
-    """Compute L1 loss in STFT domain.
+    """Compute L1 loss in STFT domain (optimized).
     
     Args:
         pred: Predicted audio of shape (batch, channels, samples)
@@ -28,46 +38,47 @@ def stft_l1_loss(
     Returns:
         STFT L1 loss value
     """
-    # Flatten batch and channels
+    # Flatten batch and channels for efficient STFT
     batch, channels, samples = pred.shape
     pred_flat = pred.reshape(batch * channels, samples)
     target_flat = target.reshape(batch * channels, samples)
     
-    # Compute STFT
+    # Get cached window
+    window_tensor = _get_cached_window(n_fft, pred.device)
+    
+    # Compute STFT (use center=False to reduce computation)
     pred_stft = torch.stft(
         pred_flat,
         n_fft=n_fft,
         hop_length=hop_length,
-        window=torch.hann_window(n_fft).to(pred.device),
+        window=window_tensor,
+        center=False,  # Faster without padding
         return_complex=True,
     )
     target_stft = torch.stft(
         target_flat,
         n_fft=n_fft,
         hop_length=hop_length,
-        window=torch.hann_window(n_fft).to(target.device),
+        window=window_tensor,
+        center=False,
         return_complex=True,
     )
     
-    # Magnitude loss
+    # Only use magnitude loss (skip phase loss for speed)
     pred_mag = torch.abs(pred_stft)
     target_mag = torch.abs(target_stft)
     mag_loss = F.l1_loss(pred_mag, target_mag)
     
-    # Phase loss (using real and imaginary parts)
-    real_loss = F.l1_loss(pred_stft.real, target_stft.real)
-    imag_loss = F.l1_loss(pred_stft.imag, target_stft.imag)
-    
-    return mag_loss + (real_loss + imag_loss) * 0.5
+    return mag_loss
 
 
 def multi_resolution_stft_loss(
     pred: torch.Tensor,
     target: torch.Tensor,
-    fft_sizes: List[int] = [4096, 2048, 1024, 512, 256],
+    fft_sizes: List[int] = [2048, 1024, 512],  # Reduced from 5 to 3 resolutions
     hop_length: int = 147,
 ) -> torch.Tensor:
-    """Compute multi-resolution STFT loss.
+    """Compute multi-resolution STFT loss (optimized).
     
     Args:
         pred: Predicted audio of shape (batch, channels, samples)
@@ -80,6 +91,7 @@ def multi_resolution_stft_loss(
     """
     loss = 0.0
     
+    # Use only 3 resolutions instead of 5 for faster computation
     for n_fft in fft_sizes:
         loss += stft_l1_loss(pred, target, n_fft, hop_length)
     
@@ -124,18 +136,18 @@ def bsmamba2_loss(
 
 
 class BSMamba2Loss(nn.Module):
-    """BSMamba2 loss module.
+    """BSMamba2 loss module (optimized).
     
     Args:
         lambda_time: Weight for time-domain loss (default: 10.0)
-        fft_sizes: List of FFT sizes (default: [4096, 2048, 1024, 512, 256])
+        fft_sizes: List of FFT sizes (default: [2048, 1024, 512])
         stft_hop: Hop length for STFT (default: 147)
     """
     
     def __init__(
         self,
         lambda_time: float = 10.0,
-        fft_sizes: List[int] = [4096, 2048, 1024, 512, 256],
+        fft_sizes: List[int] = [2048, 1024, 512],  # Reduced for speed
         stft_hop: int = 147,
     ):
         super().__init__()
