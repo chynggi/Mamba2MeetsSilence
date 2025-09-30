@@ -68,11 +68,10 @@ class Trainer:
             mode='max',
             factor=0.5,
             patience=5,
-            verbose=True,
         )
         
         # Gradient scaler for mixed precision
-        self.scaler = torch.cuda.amp.GradScaler() if config['training']['precision'] == 'bf16' else None
+        self.scaler = torch.amp.GradScaler('cuda') if config['training']['precision'] == 'bf16' else None
         
         # Tensorboard writer
         self.writer = SummaryWriter(log_dir=self.output_dir / 'logs')
@@ -105,7 +104,7 @@ class Trainer:
             mixture_spec = self._audio_to_spec(mixture)  # (batch, time, freq, 2)
             
             # Forward pass
-            with torch.cuda.amp.autocast(enabled=self.scaler is not None):
+            with torch.amp.autocast('cuda', enabled=self.scaler is not None):
                 pred_spec = self.model(mixture_spec)
                 
                 # Convert back to time domain

@@ -54,6 +54,16 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+> **⚠️ Important Note for New Clones:**
+> 
+> If you encounter `ModuleNotFoundError: No module named 'data'` after cloning, ensure you've pulled the latest changes where the `data/` source code folder is properly tracked in Git. See [BUGFIX_DATA_GITIGNORE.md](BUGFIX_DATA_GITIGNORE.md) for details.
+>
+> Quick fix:
+> ```bash
+> git pull origin main  # Get latest changes
+> python test_imports.py  # Verify all imports work
+> ```
+
 ## 📊 Dataset Preparation
 
 Download the MUSDB18HQ dataset:

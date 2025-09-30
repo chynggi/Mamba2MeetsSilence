@@ -39,9 +39,10 @@ class BandSplitModule(nn.Module):
         self.band_boundaries = self._calculate_band_boundaries()
         
         # MLP for each sub-band
+        # Each band has (freq_bins * 2) dimensions (real + imag)
         self.band_mlps = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(self.band_boundaries[i+1] - self.band_boundaries[i], hidden_dim),
+                nn.Linear((self.band_boundaries[i+1] - self.band_boundaries[i]) * 2, hidden_dim),
                 nn.LayerNorm(hidden_dim),
                 nn.GELU(),
                 nn.Linear(hidden_dim, hidden_dim),
@@ -82,10 +83,14 @@ class BandSplitModule(nn.Module):
         # Process each sub-band
         band_features = []
         for i in range(self.num_subbands):
-            start = self.band_boundaries[i] * 2  # *2 for real+imag
-            end = self.band_boundaries[i+1] * 2
+            start = self.band_boundaries[i]
+            end = self.band_boundaries[i+1]
             
-            band = spec_flat[:, :, start:end]  # (batch, time, band_width*2)
+            # Extract band (both real and imag)
+            band_real = spec[:, :, start:end, 0]  # (batch, time, band_width)
+            band_imag = spec[:, :, start:end, 1]  # (batch, time, band_width)
+            band = torch.cat([band_real, band_imag], dim=-1)  # (batch, time, band_width*2)
+            
             band_feat = self.band_mlps[i](band)  # (batch, time, hidden_dim)
             band_features.append(band_feat)
         
