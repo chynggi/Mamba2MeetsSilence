@@ -1,0 +1,37 @@
+# BSMamba2 Configuration File
+
+# Model Architecture
+model:
+  hidden_dim: 256          # Hidden dimension for features
+  num_layers: 6            # Number of dual-path layers (L)
+  num_subbands: 62         # Number of frequency sub-bands (K)
+  d_state: 64              # State dimension for Mamba2
+  d_conv: 4                # Convolution size for Mamba2
+
+# Audio Processing
+audio:
+  sample_rate: 44100       # Target sample rate
+  n_fft: 2048              # FFT window size
+  hop_length: 441          # Hop length for STFT (sample_rate / 100)
+  segment_length: 8        # Segment length in seconds
+
+# Training Configuration
+training:
+  batch_size: 5                      # Batch size per GPU
+  gradient_accumulation_steps: 6     # Gradient accumulation steps
+  learning_rate: 5e-4                # Initial learning rate
+  num_epochs: 100                    # Total number of epochs
+  precision: "bf16"                  # Training precision (bf16/fp32)
+  lambda_time: 10                    # Weight for time-domain loss
+  dropout: 0.0                       # Dropout rate
+  output_dir: "outputs"              # Output directory for checkpoints
+  resume_from: null                  # Path to checkpoint to resume from
+
+# Loss Function
+loss:
+  stft_windows: [4096, 2048, 1024, 512, 256]  # Multi-resolution STFT window sizes
+  stft_hop: 147                                # Hop length for STFT loss
+
+# Data Configuration
+data:
+  root: "/path/to/musdb18hq"  # Path to MUSDB18HQ dataset
