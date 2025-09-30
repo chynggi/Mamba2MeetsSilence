@@ -4,11 +4,16 @@ This script shows how to train BSMamba2 from scratch or resume training.
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Add project root to Python path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
+
+# Debug: print Python path
+print(f"Project root: {project_root}")
+print(f"Python path: {sys.path[:3]}")
 
 import torch
 from training.train import train_model

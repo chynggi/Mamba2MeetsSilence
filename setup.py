@@ -40,10 +40,4 @@ setup(
         'Topic :: Multimedia :: Sound/Audio :: Analysis',
     ],
     keywords='music source separation, mamba2, state space models, deep learning',
-    entry_points={
-        'console_scripts': [
-            'bsmamba2-train=training.train:main',
-            'bsmamba2-separate=inference.separate:main',
-        ],
-    },
 )
