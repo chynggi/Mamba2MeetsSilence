@@ -10,3 +10,9 @@ musdb
 museval
 einops
 tqdm
+
+# Mamba SSM for optimized selective scan
+mamba-ssm
+causal-conv1d
+packaging
+ninja
