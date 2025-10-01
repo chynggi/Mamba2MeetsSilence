@@ -81,6 +81,10 @@ class Trainer:
         self.global_step = 0
         self.best_metric = 0.0
         
+        # Checkpoint settings
+        self.save_every_n_epochs = config['training'].get('save_every_n_epochs', 1)
+        self.keep_last_n_checkpoints = config['training'].get('keep_last_n_checkpoints', None)
+        
     def train_epoch(self, train_loader: DataLoader) -> float:
         """Train for one epoch.
         
@@ -190,6 +194,11 @@ class Trainer:
                 # Update metrics
                 metrics_calc.update(pred_audio, target)
         
+        # Handle empty validation set
+        if num_batches == 0:
+            logger.warning("Validation set is empty! Skipping validation.")
+            return {'loss': float('inf'), 'sdr': 0.0}
+        
         avg_loss = total_loss / num_batches
         metrics = metrics_calc.compute()
         metrics['loss'] = avg_loss
@@ -240,11 +249,12 @@ class Trainer:
         
         return audio
     
-    def save_checkpoint(self, filename: str = 'checkpoint.pt'):
+    def save_checkpoint(self, filename: str = 'checkpoint.pt', is_best: bool = False):
         """Save training checkpoint.
         
         Args:
             filename: Checkpoint filename
+            is_best: Whether this is the best model so far
         """
         checkpoint = {
             'epoch': self.current_epoch,
@@ -259,8 +269,19 @@ class Trainer:
         if self.scaler is not None:
             checkpoint['scaler_state_dict'] = self.scaler.state_dict()
         
-        torch.save(checkpoint, self.output_dir / filename)
+        checkpoint_path = self.output_dir / filename
+        torch.save(checkpoint, checkpoint_path)
         logger.info(f'Saved checkpoint to {filename}')
+        
+        # Save as last checkpoint if not best model
+        if not is_best:
+            last_checkpoint_path = self.output_dir / 'last_checkpoint.pt'
+            torch.save(checkpoint, last_checkpoint_path)
+            logger.info(f'Saved last checkpoint')
+        
+        # Clean up old checkpoints if limit is set
+        if self.keep_last_n_checkpoints is not None and not is_best:
+            self._cleanup_old_checkpoints()
     
     def load_checkpoint(self, checkpoint_path: str):
         """Load training checkpoint.
@@ -283,6 +304,20 @@ class Trainer:
         
         logger.info(f'Loaded checkpoint from {checkpoint_path}')
     
+    def _cleanup_old_checkpoints(self):
+        """Remove old checkpoint files, keeping only the last N."""
+        # Find all epoch checkpoint files
+        checkpoint_files = sorted(
+            self.output_dir.glob('checkpoint_epoch_*.pt'),
+            key=lambda p: int(p.stem.split('_')[-1])
+        )
+        
+        # Remove oldest checkpoints
+        if len(checkpoint_files) > self.keep_last_n_checkpoints:
+            for checkpoint_file in checkpoint_files[:-self.keep_last_n_checkpoints]:
+                checkpoint_file.unlink()
+                logger.info(f'Removed old checkpoint: {checkpoint_file.name}')
+    
     def train(self, num_epochs: int, train_loader: DataLoader, val_loader: DataLoader):
         """Train the model.
         
@@ -301,6 +336,10 @@ class Trainer:
             train_loss = self.train_epoch(train_loader)
             logger.info(f'Epoch {epoch}: train_loss={train_loss:.4f}')
             
+            # Save checkpoint every N epochs (before validation)
+            if (epoch + 1) % self.save_every_n_epochs == 0:
+                self.save_checkpoint(f'checkpoint_epoch_{epoch}.pt')
+            
             # Validate
             val_metrics = self.validate(val_loader)
             logger.info(f'Epoch {epoch}: val_loss={val_metrics["loss"]:.4f}, '
@@ -314,13 +353,10 @@ class Trainer:
             # Update learning rate
             self.scheduler.step(val_metrics['cSDR'])
             
-            # Save checkpoint
-            self.save_checkpoint(f'checkpoint_epoch_{epoch}.pt')
-            
             # Save best model
             if val_metrics['cSDR'] > self.best_metric:
                 self.best_metric = val_metrics['cSDR']
-                self.save_checkpoint('best_model.pt')
+                self.save_checkpoint('best_model.pt', is_best=True)
                 logger.info(f'New best model with cSDR={self.best_metric:.2f}')
         
         logger.info('Training completed!')
@@ -368,9 +404,10 @@ def train_model(config: Dict, device: Optional[torch.device] = None):
         transform=get_transforms('train', config['audio']['sample_rate']),
     )
     
+    # Use test subset for validation (as MUSDB18 doesn't have a separate valid set)
     val_dataset = MUSDB18Dataset(
         root=config['data']['root'],
-        subset='valid',
+        subset='test',
         segment_length=config['audio']['segment_length'],
         sample_rate=config['audio']['sample_rate'],
         sources=['vocals'],
