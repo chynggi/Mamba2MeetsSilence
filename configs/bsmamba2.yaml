@@ -7,14 +7,14 @@ model:
   num_subbands: 48         # Number of frequency sub-bands (K) (reduced for VRAM)
   d_state: 64              # State dimension for Mamba2
   d_conv: 4                # Convolution size for Mamba2
-  use_gradient_checkpointing: false  # Enable gradient checkpointing to save VRAM
+  use_gradient_checkpointing: true   # Enable gradient checkpointing to save VRAM
 
 # Audio Processing
 audio:
   sample_rate: 44100       # Target sample rate
   n_fft: 2048              # FFT window size
   hop_length: 441          # Hop length for STFT (sample_rate / 100)
-  segment_length: 4        # Segment length in seconds (reduced for VRAM)
+  segment_length: 2        # Segment length in seconds (reduced for VRAM)
 
 # Training Configuration
 training:

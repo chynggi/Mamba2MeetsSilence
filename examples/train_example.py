@@ -27,8 +27,9 @@ def main():
     
     # Override some settings for this example
     config['training']['num_epochs'] = 100
-    config['training']['batch_size'] = 5
+    config['training']['batch_size'] = 1  # Reduced to 1 for memory safety
     config['training']['output_dir'] = 'outputs/example_run'
+    config['model']['use_gradient_checkpointing'] = True  # Enable to save memory
     
     # Update dataset path (IMPORTANT: Change this to your dataset location)
     config['data']['root'] = '/workspace/musdb18hq'

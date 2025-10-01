@@ -182,8 +182,16 @@ class Mamba2Block(nn.Module):
         )
         
         # Discretize state space parameters
+        # Ensure consistent dtype for all tensors
         A = -torch.exp(self.A_log.float())  # (d_inner,)
         delta = F.softplus(delta)  # (batch, seqlen, d_inner)
+        
+        # Convert all to the same dtype as x for CUDA kernel compatibility
+        if x.dtype == torch.bfloat16 or x.dtype == torch.float16:
+            A = A.to(x.dtype)
+            delta = delta.to(x.dtype)
+            B = B.to(x.dtype)
+            C = C.to(x.dtype)
         
         # Apply state space model
         y = self._selective_scan(x, delta, A, B, C, self.D, state)
@@ -252,21 +260,29 @@ class Mamba2Block(nn.Module):
         batch, seqlen, d_inner = u.shape
         _, _, d_state = B.shape
         
+        # Ensure all tensors have the same dtype
+        target_dtype = u.dtype
+        delta = delta.to(target_dtype)
+        A = A.to(target_dtype)
+        B = B.to(target_dtype)
+        C = C.to(target_dtype)
+        D = D.to(target_dtype)
+        
         # Reshape for mamba-ssm interface
         # mamba-ssm expects:
         # - u: (batch, d_inner, seqlen)
-        # - delta: (batch, d_inner, seqlen)  <- FIXED: was incorrectly (batch, d_state, seqlen)
+        # - delta: (batch, d_inner, seqlen)
         # - A: (d_inner, d_state)
         # - B: (batch, d_state, seqlen)
         # - C: (batch, d_state, seqlen)
-        u_t = rearrange(u, 'b l d -> b d l')
-        delta_t = rearrange(delta, 'b l d -> b d l')  # Now delta has d_inner dimension
-        B_t = rearrange(B, 'b l n -> b n l')
-        C_t = rearrange(C, 'b l n -> b n l')
+        u_t = rearrange(u, 'b l d -> b d l').contiguous()
+        delta_t = rearrange(delta, 'b l d -> b d l').contiguous()
+        B_t = rearrange(B, 'b l n -> b n l').contiguous()
+        C_t = rearrange(C, 'b l n -> b n l').contiguous()
         
         # Expand A to match (d_inner, d_state) dimensions
         # A is (d_inner,) representing scalar matrix aI
-        A_expanded = A.unsqueeze(-1).expand(d_inner, d_state)  # (d_inner, d_state)
+        A_expanded = A.unsqueeze(-1).expand(d_inner, d_state).contiguous()  # (d_inner, d_state)
         
         # Call optimized selective_scan_fn
         # Note: selective_scan_fn has signature:
@@ -289,8 +305,53 @@ class Mamba2Block(nn.Module):
             y = rearrange(y, 'b d l -> b l d')
             return y
         except Exception as e:
-            print(f"Warning: CUDA selective scan failed ({e}), falling back to PyTorch")
-            return self._selective_scan_pytorch(u, delta, A, B, C, D, state)
+            # Only print warning once to avoid spam
+            if not hasattr(self, '_fallback_warned'):
+                print(f"Warning: CUDA selective scan failed ({e}), using chunked fallback")
+                self._fallback_warned = True
+            # Use chunked processing to avoid OOM
+            return self._selective_scan_pytorch_chunked(u, delta, A, B, C, D, state)
+    
+    def _selective_scan_pytorch_chunked(
+        self,
+        u: torch.Tensor,
+        delta: torch.Tensor,
+        A: torch.Tensor,
+        B: torch.Tensor,
+        C: torch.Tensor,
+        D: torch.Tensor,
+        state: Optional[torch.Tensor] = None,
+        chunk_size: int = 64,
+    ) -> torch.Tensor:
+        """Memory-efficient chunked PyTorch selective scan.
+        
+        Processes sequence in chunks to avoid OOM errors.
+        """
+        batch, seqlen, d_inner = u.shape
+        _, _, d_state = B.shape
+        
+        # Initialize state
+        if state is None:
+            state = torch.zeros(batch, d_inner, d_state, device=u.device, dtype=u.dtype)
+        
+        # Process in chunks
+        outputs = []
+        current_state = state
+        for i in range(0, seqlen, chunk_size):
+            chunk_end = min(i + chunk_size, seqlen)
+            u_chunk = u[:, i:chunk_end, :]
+            delta_chunk = delta[:, i:chunk_end, :]
+            B_chunk = B[:, i:chunk_end, :]
+            C_chunk = C[:, i:chunk_end, :]
+            
+            # Process this chunk using the simple implementation
+            # Note: state is updated in-place by _selective_scan_pytorch
+            y_chunk = self._selective_scan_pytorch(
+                u_chunk, delta_chunk, A, B_chunk, C_chunk, D, current_state
+            )
+            outputs.append(y_chunk)
+        
+        return torch.cat(outputs, dim=1)
     
     def _selective_scan_pytorch(
         self,
