@@ -2,9 +2,9 @@
 
 # Model Architecture
 model:
-  hidden_dim: 192          # Hidden dimension for features (reduced for VRAM)
-  num_layers: 4            # Number of dual-path layers (L) (reduced for VRAM)
-  num_subbands: 48         # Number of frequency sub-bands (K) (reduced for VRAM)
+  hidden_dim: 256          # Hidden dimension for features (original paper)
+  num_layers: 6            # Number of dual-path layers (L) (original paper)
+  num_subbands: 62         # Number of frequency sub-bands (K) (original paper)
   d_state: 64              # State dimension for Mamba2
   d_conv: 4                # Convolution size for Mamba2
   use_gradient_checkpointing: true   # Enable gradient checkpointing to save VRAM
@@ -14,15 +14,15 @@ audio:
   sample_rate: 44100       # Target sample rate
   n_fft: 2048              # FFT window size
   hop_length: 441          # Hop length for STFT (sample_rate / 100)
-  segment_length: 2        # Segment length in seconds (reduced for VRAM)
+  segment_length: 8        # Segment length in seconds (original paper)
 
 # Training Configuration
 training:
-  batch_size: 2                      # Batch size per GPU (reduced for VRAM)
-  gradient_accumulation_steps: 15    # Gradient accumulation steps (increased to maintain effective batch)
+  batch_size: 5                      # Batch size per GPU (original paper)
+  gradient_accumulation_steps: 6     # Gradient accumulation steps (original paper)
   learning_rate: 5e-4                # Initial learning rate
   num_epochs: 100                    # Total number of epochs
-  precision: "bf16"                  # Training precision (bf16/fp32)
+  precision: "fp32"                  # Training precision (fp32 for stability)
   lambda_time: 10                    # Weight for time-domain loss
   dropout: 0.0                       # Dropout rate
   output_dir: "outputs"              # Output directory for checkpoints
@@ -30,8 +30,8 @@ training:
 
 # Loss Function
 loss:
-  stft_windows: [2048, 1024, 512]  # Multi-resolution STFT window sizes (reduced for speed)
-  stft_hop: 147                     # Hop length for STFT loss
+  stft_windows: [4096, 2048, 1024, 512, 256]  # Multi-resolution STFT window sizes (original paper)
+  stft_hop: 147                               # Hop length for STFT loss
 
 # Data Configuration
 data:
