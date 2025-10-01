@@ -73,7 +73,8 @@ class Mamba2Block(nn.Module):
         )
         
         # State space parameters
-        self.x_proj = nn.Linear(self.d_inner, d_state + d_state + d_state, bias=False)
+        # Project to delta, B, C where delta has d_inner dimensions (one per feature)
+        self.x_proj = nn.Linear(self.d_inner, self.d_inner + d_state + d_state, bias=False)
         
         # Scalar state transition parameter (A = aI)
         self.A_log = nn.Parameter(torch.randn(self.d_inner))
@@ -173,16 +174,16 @@ class Mamba2Block(nn.Module):
         x = F.silu(x)
         
         # State space computation
-        x_proj = self.x_proj(x)  # (batch, seqlen, d_state + d_state + d_state)
+        x_proj = self.x_proj(x)  # (batch, seqlen, d_inner + d_state + d_state)
         delta, B, C = torch.split(
             x_proj,
-            [self.d_state, self.d_state, self.d_state],
+            [self.d_inner, self.d_state, self.d_state],
             dim=-1
         )
         
         # Discretize state space parameters
         A = -torch.exp(self.A_log.float())  # (d_inner,)
-        delta = F.softplus(delta)  # (batch, seqlen, d_state)
+        delta = F.softplus(delta)  # (batch, seqlen, d_inner)
         
         # Apply state space model
         y = self._selective_scan(x, delta, A, B, C, self.D, state)
@@ -218,7 +219,7 @@ class Mamba2Block(nn.Module):
         
         Args:
             u: Input of shape (batch, seqlen, d_inner)
-            delta: Time steps of shape (batch, seqlen, d_state)
+            delta: Time steps of shape (batch, seqlen, d_inner)
             A: State transition of shape (d_inner,)
             B: Input matrix of shape (batch, seqlen, d_state)
             C: Output matrix of shape (batch, seqlen, d_state)
@@ -249,16 +250,21 @@ class Mamba2Block(nn.Module):
         providing 5-10x speedup over the native PyTorch implementation.
         """
         batch, seqlen, d_inner = u.shape
-        d_state = delta.shape[-1]
+        _, _, d_state = B.shape
         
         # Reshape for mamba-ssm interface
-        # mamba-ssm expects: u (batch, d_inner, seqlen)
+        # mamba-ssm expects:
+        # - u: (batch, d_inner, seqlen)
+        # - delta: (batch, d_inner, seqlen)  <- FIXED: was incorrectly (batch, d_state, seqlen)
+        # - A: (d_inner, d_state)
+        # - B: (batch, d_state, seqlen)
+        # - C: (batch, d_state, seqlen)
         u_t = rearrange(u, 'b l d -> b d l')
-        delta_t = rearrange(delta, 'b l n -> b n l')
+        delta_t = rearrange(delta, 'b l d -> b d l')  # Now delta has d_inner dimension
         B_t = rearrange(B, 'b l n -> b n l')
         C_t = rearrange(C, 'b l n -> b n l')
         
-        # Expand A to match d_inner dimensions
+        # Expand A to match (d_inner, d_state) dimensions
         # A is (d_inner,) representing scalar matrix aI
         A_expanded = A.unsqueeze(-1).expand(d_inner, d_state)  # (d_inner, d_state)
         
@@ -269,7 +275,7 @@ class Mamba2Block(nn.Module):
         try:
             y = selective_scan_fn(
                 u_t,           # (batch, d_inner, seqlen)
-                delta_t,       # (batch, d_state, seqlen)
+                delta_t,       # (batch, d_inner, seqlen) <- FIXED
                 A_expanded,    # (d_inner, d_state)
                 B_t,           # (batch, d_state, seqlen)
                 C_t,           # (batch, d_state, seqlen)
@@ -302,15 +308,21 @@ class Mamba2Block(nn.Module):
         with all devices and debugging scenarios.
         """
         batch, seqlen, d_inner = u.shape
-        d_state = delta.shape[-1]
+        _, _, d_state = B.shape
         
         # Initialize state
         if state is None:
             state = torch.zeros(batch, d_inner, d_state, device=u.device, dtype=u.dtype)
         
         # Discretize A and B
-        deltaA = torch.exp(delta.unsqueeze(2) * A.view(1, 1, -1, 1))  # (batch, seqlen, d_inner, 1)
-        deltaB_u = delta.unsqueeze(2) * B.unsqueeze(2) * u.unsqueeze(-1)  # (batch, seqlen, d_inner, d_state)
+        # delta: (batch, seqlen, d_inner) -> (batch, seqlen, d_inner, 1)
+        # A: (d_inner,) -> (1, 1, d_inner, 1)
+        deltaA = torch.exp(delta.unsqueeze(-1) * A.view(1, 1, -1, 1))  # (batch, seqlen, d_inner, 1)
+        
+        # delta: (batch, seqlen, d_inner) -> (batch, seqlen, d_inner, 1)
+        # B: (batch, seqlen, d_state) -> (batch, seqlen, 1, d_state)
+        # u: (batch, seqlen, d_inner) -> (batch, seqlen, d_inner, 1)
+        deltaB_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)  # (batch, seqlen, d_inner, d_state)
         
         # Sequential scan
         ys = []
@@ -320,10 +332,10 @@ class Mamba2Block(nn.Module):
             x = deltaA[:, i] * x + deltaB_u[:, i]  # (batch, d_inner, d_state)
             
             # Compute output: y(t) = C * x(t) + D * u(t)
-            # C[:, i]: (batch, d_state) -> (batch, 1, d_state)
+            # C[:, i]: (batch, d_state)
             # x: (batch, d_inner, d_state)
-            # We need: (batch, d_inner)
-            y = torch.einsum('bd,bnd->bn', C[:, i], x) + D * u[:, i]  # (batch, d_inner)
+            # Result: (batch, d_inner)
+            y = torch.einsum('bn,bdn->bd', C[:, i], x) + D * u[:, i]  # (batch, d_inner)
             ys.append(y)
         
         y = torch.stack(ys, dim=1)  # (batch, seqlen, d_inner)
