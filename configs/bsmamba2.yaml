@@ -20,13 +20,15 @@ audio:
 training:
   batch_size: 5                      # Batch size per GPU (original paper)
   gradient_accumulation_steps: 6     # Gradient accumulation steps (original paper)
-  learning_rate: 5e-4                # Initial learning rate
+  learning_rate: 0.0005              # Initial learning rate
   num_epochs: 100                    # Total number of epochs
   precision: "fp32"                  # Training precision (fp32 for stability)
   lambda_time: 10                    # Weight for time-domain loss
   dropout: 0.0                       # Dropout rate
   output_dir: "outputs"              # Output directory for checkpoints
   resume_from: null                  # Path to checkpoint to resume from
+  save_every_n_epochs: 1             # Save checkpoint every N epochs (1 = every epoch)
+  keep_last_n_checkpoints: 5         # Keep only last N checkpoints (null = keep all)
 
 # Loss Function
 loss:
